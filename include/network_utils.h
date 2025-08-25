@@ -9,5 +9,6 @@
 void get_mac_addr(const char *ifname, uint8_t *mac);
 void set_ip_addr(const char *ifname, uint32_t ip);
 int create_dhcp_socket(const char *ifname);
+void bring_interface_up(const char *ifname);
 
 #endif

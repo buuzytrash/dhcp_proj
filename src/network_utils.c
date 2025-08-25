@@ -83,7 +83,8 @@ int create_dhcp_socket(const char *ifname) {
     struct sockaddr_in client_addr = {0};
     client_addr.sin_family = AF_INET;
     client_addr.sin_port = htons(DHCP_PORT_CLIENT);
-    client_addr.sin_addr.s_addr = INADDR_ANY;
+    // client_addr.sin_addr.s_addr = INADDR_ANY;
+    client_addr.sin_addr.s_addr = inet_addr("255.255.255.255");
 
     if (bind(sock, (struct sockaddr *)&client_addr, sizeof(client_addr)) < 0) {
         perror("[-] bind()");
@@ -92,4 +93,14 @@ int create_dhcp_socket(const char *ifname) {
     }
 
     return sock;
+}
+
+void bring_interface_up(const char *ifname) {
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    struct ifreq ifr = {0};
+    strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+    ioctl(fd, SIOCGIFFLAGS, &ifr);
+    ifr.ifr_flags |= IFF_UP;
+    ioctl(fd, SIOCSIFFLAGS, &ifr);
+    close(fd);
 }
