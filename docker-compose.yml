@@ -1,0 +1,60 @@
+services:
+  dhcp-server:
+    image: alpine:3.18
+    container_name: dhcp-server
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+    networks:
+      test-network:
+        ipv4_address: 192.168.91.2
+    command:
+      [
+        "sh",
+        "-c",
+        "apk add --no-cache dnsmasq && echo 'interface=eth0
+
+          \ dhcp-range=192.168.91.100,192.168.91.200,255.255.255.0,12h
+
+          \ dhcp-option=3,192.168.91.1
+
+          \ dhcp-option=6,8.8.8.8
+
+          \ server=8.8.8.8
+
+          \ dhcp-authoritative
+
+          \ log-dhcp
+
+          \ no-resolv
+
+          \ no-hosts' > /etc/dnsmasq.conf && dnsmasq -d -C /etc/dnsmasq.conf"
+      ]
+    healthcheck:
+      test: [ "CMD", "nc", "-z", "localhost", "67" ]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 10s
+  dhcp-client:
+    build: .
+    container_name: dhcp-client-test
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      test-network:
+    command: [ "sh", "-c", "ip addr flush dev eth0 && ip link set eth0 up && /app/bin/dhcp_client eth0" ]
+    tty: true
+    depends_on:
+      dhcp-server:
+        condition: service_healthy
+
+networks:
+  test-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.91.0/24
+          gateway: 192.168.91.1
