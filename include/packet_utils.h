@@ -2,8 +2,13 @@
 #define PACKET_UTILS_H
 
 #include "dhcp.h"
+#include <stdint.h>
+
+void create_dhcp_packet(struct dhcp_packet *packet, uint8_t *mac, uint32_t xid, uint8_t msg_type);
+void create_header(uint8_t *buffer, uint8_t *src_mac, uint8_t *dst_mac, uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, uint16_t udp_len);
+int send_dhcp_packet(int sock, uint8_t *src_mac, struct dhcp_packet *dhcp_packet, uint32_t xid, uint8_t msg_type, const char *ifname);
+int receive_dhcp_packet(int sock, struct dhcp_packet *dhcp_packet, uint32_t expected_xid);
 
 void print_dhcp_packet(const struct dhcp_packet *packet, const char *type);
-uint32_t get_dhcp_serv_id(uint8_t *options);
 
 #endif

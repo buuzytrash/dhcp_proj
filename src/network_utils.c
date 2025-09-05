@@ -1,93 +1,76 @@
 #include "network_utils.h"
 
-#include <aio.h>
 #include <arpa/inet.h>
+#include <linux/if_packet.h>
 #include <net/if.h>
-#include <netinet/in.h>
+#include <netinet/ether.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
-void get_mac_addr(const char *ifname, uint8_t *mac) {
+void get_mac_addr(const char *ifname, uint8_t *mac)
+{
     int fd = 0;
-    if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+    if ((fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0)
+    {
         perror("socket() in get_mac_addr()");
         return;
     }
     struct ifreq ifr;
     strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
-    ioctl(fd, SIOCGIFHWADDR, &ifr);
+    if (ioctl(fd, SIOCGIFHWADDR, &ifr) < 0)
+    {
+        perror("ioctl");
+        close(fd);
+        return;
+    }
+
     memcpy(mac, ifr.ifr_hwaddr.sa_data, 6);
     close(fd);
 }
 
-void set_ip_addr(const char *ifname, uint32_t ip) {
-    int fd = 0;
-    if ((fd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        perror("socket() in set_ip_addr()");
-        return;
-    }
-    struct ifreq ifr;
-    struct sockaddr_in *sin = (struct sockaddr_in *)&ifr.ifr_addr;
-
-    strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
-    sin->sin_family = AF_INET;
-    sin->sin_addr.s_addr = ip;
-
-    ioctl(fd, SIOCSIFADDR, &ifr);
-    close(fd);
-}
-
-int create_dhcp_socket(const char *ifname) {
+int create_raw_socket(const char *ifname)
+{
     int sock = 0;
-    if ((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
+    if ((sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0)
+    {
         perror("[-] socket()");
         return -1;
     }
 
-    int broadcast = 1;
-    if ((setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast,
-                    sizeof(broadcast))) < 0) {
-        perror("[-] setsockopt(SO_BROADCAST)");
-        close(sock);
-        return -1;
-    }
-
-    int reuse = 1;
-    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
-        perror("[-] setsockopt(SO_REUSEADDR)");
-        close(sock);
-        return -1;
-    }
-
-    struct timeval tv = {5, 0};
-    if ((setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))) < 0) {
-        perror("[-] setsockopt(SO_RCVTIMEO)");
-        close(sock);
-        return -1;
-    }
-
     struct ifreq ifr;
-    memset(&ifr, 0, sizeof(ifr));
     strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
 
-    if ((setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, &ifr, sizeof(ifr))) <
-        0) {
-        perror("[-] setsockopt(SO_BINDTODEVICE)");
+    if (ioctl(sock, SIOCGIFINDEX, &ifr) < 0)
+    {
+        perror("ioctl SIOCGIFINDEX");
         close(sock);
         return -1;
     }
 
-    struct sockaddr_in client_addr = {0};
-    client_addr.sin_family = AF_INET;
-    client_addr.sin_port = htons(DHCP_PORT_CLIENT);
-    // client_addr.sin_addr.s_addr = INADDR_ANY;
-    client_addr.sin_addr.s_addr = inet_addr("255.255.255.255");
+    struct sockaddr_ll sll;
+    memset(&sll, 0, sizeof(sll));
+    sll.sll_family = AF_PACKET;
+    sll.sll_ifindex = ifr.ifr_ifindex;
+    sll.sll_protocol = htons(ETH_P_ALL);
 
-    if (bind(sock, (struct sockaddr *)&client_addr, sizeof(client_addr)) < 0) {
-        perror("[-] bind()");
+    if (bind(sock, (struct sockaddr *)&sll, sizeof(sll)) < 0)
+    {
+        perror("bind");
+        close(sock);
+        return -1;
+    }
+
+    struct packet_mreq mr;
+    memset(&mr, 0, sizeof(mr));
+    mr.mr_ifindex = sll.sll_ifindex;
+    mr.mr_type = PACKET_MR_PROMISC;
+
+    if (setsockopt(sock, SOL_PACKET, PACKET_ADD_MEMBERSHIP, &mr, sizeof(mr)) < 0)
+    {
+        perror("setsockopt promiscuous");
         close(sock);
         return -1;
     }
@@ -95,7 +78,8 @@ int create_dhcp_socket(const char *ifname) {
     return sock;
 }
 
-void bring_interface_up(const char *ifname) {
+void bring_interface_up(const char *ifname)
+{
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     struct ifreq ifr = {0};
     strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
@@ -103,4 +87,30 @@ void bring_interface_up(const char *ifname) {
     ifr.ifr_flags |= IFF_UP;
     ioctl(fd, SIOCSIFFLAGS, &ifr);
     close(fd);
+}
+
+uint16_t checksum(uint16_t *addr, int len)
+{
+    int nleft = len;
+    uint32_t sum = 0;
+    uint16_t *w = addr;
+    uint16_t answer = 0;
+
+    while (nleft > 1)
+    {
+        sum += *w++;
+        nleft -= 2;
+    }
+
+    if (nleft == 1)
+    {
+        *(uint8_t *)(&answer) = *(uint8_t *)w;
+        sum += answer;
+    }
+
+    sum = (sum >> 16) + (sum & 0xffff);
+    sum += (sum >> 16);
+    answer = ~sum;
+
+    return answer;
 }

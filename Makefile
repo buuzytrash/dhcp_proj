@@ -29,6 +29,6 @@ clean:
 	rm -rf $(BIN_DIR) $(OBJ_DIR)
 
 run: $(BIN)
-	./$(BIN)
+	sudo ./$(BIN) eth0
 
 .PHONY: all clean run
