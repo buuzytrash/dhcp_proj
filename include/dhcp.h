@@ -1,6 +1,7 @@
 #ifndef DHCP_H
 #define DHCP_H
 
+#include <net/if.h>
 #include <netinet/in.h>
 #include <stdint.h>
 
@@ -53,6 +54,19 @@ typedef struct dhcp_packet {
   uint8_t options[DHCP_OPT_LEN];  // DHCP options
 } __attribute__((packed)) dhcp_packet_t;
 
+typedef struct dhcp_client_state {
+  int sock;
+  uint32_t xid;
+  struct in_addr offered_ip;
+  struct in_addr server_ip;
+  uint8_t mac[6];
+  char ifname[IFNAMSIZ];
+} dhcp_client_state_t;
+
 void dhcp_client_run(const char *ifname);
+dhcp_client_state_t *dhcp_client_init(const char *ifname);
+int dhcp_send_discover(dhcp_client_state_t *client);
+int dhcp_receive_offer(dhcp_client_state_t *client);
+void dhcp_client_cleanup(dhcp_client_state_t *client);
 
 #endif
