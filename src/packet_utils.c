@@ -11,9 +11,9 @@
 #include <string.h>
 #include <time.h>
 
-void create_dhcp_packet(struct dhcp_packet *packet, uint8_t *mac, uint32_t xid, uint8_t msg_type)
+void create_dhcp_packet(dhcp_packet_t *packet, uint8_t *mac, uint32_t xid, uint8_t msg_type)
 {
-    memset(packet, 0, sizeof(struct dhcp_packet));
+    memset(packet, 0, sizeof(dhcp_packet_t));
 
     packet->op = BOOTREQUEST;
     packet->htype = DHCP_HTYPE_ETHERNET;
@@ -47,16 +47,16 @@ void create_dhcp_packet(struct dhcp_packet *packet, uint8_t *mac, uint32_t xid, 
 
 void create_header(uint8_t *buffer, uint8_t *src_mac, uint8_t *dst_mac, uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, uint16_t udp_len)
 {
-    struct eth_header *eth = (struct eth_header *)buffer;
+    eth_header_t *eth = (eth_header_t *)buffer;
     memcpy(eth->dst_mac, dst_mac, 6);
     memcpy(eth->src_mac, src_mac, 6);
     eth->eth_type = htons(ETH_P_IP);
 
-    struct ip_header *ip = (struct ip_header *)(buffer + sizeof(struct eth_header));
+    ip_header_t *ip = (ip_header_t *)(buffer + sizeof(eth_header_t));
     ip->version = 4;
     ip->ihl = 5;
     ip->tos = 0;
-    ip->tot_len = htons(sizeof(struct ip_header) + sizeof(struct udp_header) + udp_len);
+    ip->tot_len = htons(sizeof(ip_header_t) + sizeof(udp_header_t) + udp_len);
     ip->id = htons(rand() % 0xFFFF);
     ip->frag_off = 0;
     ip->ttl = 64;
@@ -64,23 +64,23 @@ void create_header(uint8_t *buffer, uint8_t *src_mac, uint8_t *dst_mac, uint32_t
     ip->saddr = src_ip;
     ip->daddr = dst_ip;
     ip->check = 0;
-    ip->check = checksum((uint16_t *)ip, sizeof(struct ip_header));
+    ip->check = checksum((uint16_t *)ip, sizeof(ip_header_t));
 
-    struct udp_header *udp = (struct udp_header *)(buffer + sizeof(struct eth_header) + sizeof(struct ip_header));
+    udp_header_t *udp = (udp_header_t *)(buffer + sizeof(eth_header_t) + sizeof(ip_header_t));
     udp->source = htons(src_port);
     udp->dest = htons(dst_port);
-    udp->len = htons(sizeof(struct udp_header) + udp_len);
+    udp->len = htons(sizeof(udp_header_t) + udp_len);
     udp->check = 0;
 }
 
-int send_dhcp_packet(int sock, uint8_t *src_mac, struct dhcp_packet *dhcp_packet, uint32_t xid, uint8_t msg_type, const char *ifname)
+int send_dhcp_packet(int sock, uint8_t *src_mac, dhcp_packet_t *dhcp_packet, uint32_t xid, uint8_t msg_type, const char *ifname)
 {
     uint8_t buffer[1500];
     uint8_t broadcast_mac[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
-    create_header(buffer, src_mac, broadcast_mac, INADDR_ANY, INADDR_BROADCAST, DHCP_PORT_CLIENT, DHCP_PORT_SERVER, sizeof(struct dhcp_packet));
+    create_header(buffer, src_mac, broadcast_mac, INADDR_ANY, INADDR_BROADCAST, DHCP_PORT_CLIENT, DHCP_PORT_SERVER, sizeof(dhcp_packet_t));
 
-    memcpy(buffer + sizeof(struct eth_header) + sizeof(struct ip_header) + sizeof(struct udp_header), dhcp_packet, sizeof(struct dhcp_packet));
+    memcpy(buffer + sizeof(eth_header_t) + sizeof(ip_header_t) + sizeof(udp_header_t), dhcp_packet, sizeof(dhcp_packet_t));
 
     struct ifreq ifr;
     strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
@@ -101,8 +101,8 @@ int send_dhcp_packet(int sock, uint8_t *src_mac, struct dhcp_packet *dhcp_packet
     printf("Debug: Interface index: %d\n", dest_addr.sll_ifindex);
 
     ssize_t sent = sendto(sock, buffer,
-                          sizeof(struct eth_header) + sizeof(struct ip_header) +
-                              sizeof(struct udp_header) + sizeof(struct dhcp_packet),
+                          sizeof(eth_header_t) + sizeof(ip_header_t) +
+                              sizeof(udp_header_t) + sizeof(dhcp_packet_t),
                           0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
 
     if (sent < 0)
@@ -115,7 +115,7 @@ int send_dhcp_packet(int sock, uint8_t *src_mac, struct dhcp_packet *dhcp_packet
 
     return 0;
 }
-int receive_dhcp_packet(int sock, struct dhcp_packet *dhcp_packet, uint32_t expected_xid)
+int receive_dhcp_packet(int sock, dhcp_packet_t *dhcp_packet, uint32_t expected_xid)
 {
     uint8_t buffer[1500];
 
@@ -130,27 +130,27 @@ int receive_dhcp_packet(int sock, struct dhcp_packet *dhcp_packet, uint32_t expe
 
         printf("[DEBUG] Received %zd bytes\n", n_bytes);
 
-        if (n_bytes < (ssize_t)(sizeof(struct eth_header) + sizeof(struct ip_header) + sizeof(struct udp_header)))
+        if (n_bytes < (ssize_t)(sizeof(eth_header_t) + sizeof(ip_header_t) + sizeof(udp_header_t)))
         {
             printf("[DEBUG] Packet too small, skipping\n");
             continue;
         }
 
-        struct eth_header *eth = (struct eth_header *)buffer;
+        eth_header_t *eth = (eth_header_t *)buffer;
         if (htons(eth->eth_type) != ETH_P_IP)
         {
             printf("[DEBUG] Not IP packet, skipping\n");
             continue;
         }
 
-        struct ip_header *ip = (struct ip_header *)(buffer + sizeof(struct eth_header));
+        ip_header_t *ip = (ip_header_t *)(buffer + sizeof(eth_header_t));
         if (ip->protocol != IPPROTO_UDP)
         {
             printf("[DEBUG] Not UDP packet, skipping\n");
             continue;
         }
 
-        struct udp_header *udp = (struct udp_header *)(buffer + sizeof(struct eth_header) + sizeof(struct ip_header));
+        udp_header_t *udp = (udp_header_t *)(buffer + sizeof(eth_header_t) + sizeof(ip_header_t));
         printf("[DEBUG] UDP dest port: %d (expected: %d)\n", ntohs(udp->dest), DHCP_PORT_CLIENT);
         if (ntohs(udp->dest) != DHCP_PORT_CLIENT)
         {
@@ -158,10 +158,10 @@ int receive_dhcp_packet(int sock, struct dhcp_packet *dhcp_packet, uint32_t expe
             continue;
         }
 
-        size_t headers_size = sizeof(struct eth_header) + sizeof(struct ip_header) + sizeof(struct udp_header);
-        // if (n_bytes < (ssize_t)(sizeof(struct eth_header) + sizeof(struct ip_header) + sizeof(struct udp_header) + sizeof(struct dhcp_packet)))
+        size_t headers_size = sizeof(eth_header_t) + sizeof(ip_header_t) + sizeof(udp_header_t);
+        // if (n_bytes < (ssize_t)(sizeof(eth_header_t) + sizeof(ip_header_t) + sizeof(udp_header_t) + sizeof(dhcp_packet_t)))
         // {
-        //     printf("[DEBUG] Packet too small for DHCP, headers: %zu, total: %zu\n", headers_size, headers_size + sizeof(struct dhcp_packet));
+        //     printf("[DEBUG] Packet too small for DHCP, headers: %zu, total: %zu\n", headers_size, headers_size + sizeof(dhcp_packet_t));
         //     continue;
         // }
 
@@ -172,7 +172,7 @@ int receive_dhcp_packet(int sock, struct dhcp_packet *dhcp_packet, uint32_t expe
             continue;
         }
 
-        struct dhcp_packet *recv_packet = (struct dhcp_packet *)(buffer + sizeof(struct eth_header) + sizeof(struct ip_header) + sizeof(struct udp_header));
+        dhcp_packet_t *recv_packet = (dhcp_packet_t *)(buffer + sizeof(eth_header_t) + sizeof(ip_header_t) + sizeof(udp_header_t));
 
         if (recv_packet->magic_cookie != htonl(DHCP_MAGIC_COOKIE))
         {
@@ -191,12 +191,12 @@ int receive_dhcp_packet(int sock, struct dhcp_packet *dhcp_packet, uint32_t expe
         printf("[DEBUG] Expected XID: 0x%08X, Received XID: 0x%08X\n",
                htonl(expected_xid), recv_packet->xid);
 
-        memcpy(dhcp_packet, recv_packet, sizeof(struct dhcp_packet));
+        memcpy(dhcp_packet, recv_packet, sizeof(dhcp_packet_t));
         return 0;
     }
 }
 
-void print_dhcp_packet(const struct dhcp_packet *packet, const char *type)
+void print_dhcp_packet(const dhcp_packet_t *packet, const char *type)
 {
     printf("\n=== DHCP %s PACKET DETAILS ===\n", type);
     printf("Operation:               %s\n",

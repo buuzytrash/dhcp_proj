@@ -50,7 +50,7 @@ void dhcp_client_run(const char *ifname)
         return;
     }
 
-    struct dhcp_packet discover_packet;
+    dhcp_packet_t discover_packet;
     create_dhcp_packet(&discover_packet, mac, xid, DHCPDISCOVER);
 
     int attempt = 0;
@@ -67,7 +67,7 @@ void dhcp_client_run(const char *ifname)
 
         printf("[*] Waiting for DHCPOFFER...\n");
 
-        struct dhcp_packet offer_packet;
+        dhcp_packet_t offer_packet;
         if (receive_dhcp_packet(sock, &offer_packet, xid) == 0)
         {
             uint8_t *options = offer_packet.options;

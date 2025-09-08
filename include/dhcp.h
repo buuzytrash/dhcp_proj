@@ -34,7 +34,7 @@
 
 #define DHCP_OPT_LEN 312
 
-struct dhcp_packet {
+typedef struct dhcp_packet {
   uint8_t op;                     // BOOTREQUEST (1) / BOOTREPLY (2)
   uint8_t htype;                  // 1 (Ethernet)
   uint8_t hlen;                   // 6 (MAC address)
@@ -51,7 +51,7 @@ struct dhcp_packet {
   uint8_t file[128];              // download file
   uint32_t magic_cookie;          // 0x63825363 (DHCP signature)
   uint8_t options[DHCP_OPT_LEN];  // DHCP options
-} __attribute__((packed));
+} __attribute__((packed)) dhcp_packet_t;
 
 void dhcp_client_run(const char *ifname);
 

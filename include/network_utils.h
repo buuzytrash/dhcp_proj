@@ -7,14 +7,14 @@
 #define DHCP_PORT_SERVER 67
 #define DHCP_PORT_CLIENT 68
 
-struct eth_header
+typedef struct eth_header
 {
     uint8_t dst_mac[6];
     uint8_t src_mac[6];
     uint16_t eth_type;
-} __attribute__((packed));
+} __attribute__((packed)) eth_header_t;
 
-struct ip_header
+typedef struct ip_header
 {
     uint8_t ihl : 4;
     uint8_t version : 4;
@@ -27,15 +27,15 @@ struct ip_header
     uint16_t check;
     uint32_t saddr;
     uint32_t daddr;
-} __attribute__((packed));
+} __attribute__((packed)) ip_header_t;
 
-struct udp_header
+typedef struct udp_header
 {
     uint16_t source;
     uint16_t dest;
     uint16_t len;
     uint16_t check;
-} __attribute__((packed));
+} __attribute__((packed)) udp_header_t;
 
 void get_mac_addr(const char *ifname, uint8_t *mac);
 int create_raw_socket(const char *ifname);
