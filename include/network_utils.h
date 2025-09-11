@@ -7,13 +7,13 @@
 #define DHCP_PORT_SERVER 67
 #define DHCP_PORT_CLIENT 68
 
-typedef struct eth_header {
+typedef struct {
   uint8_t dst_mac[6];
   uint8_t src_mac[6];
   uint16_t eth_type;
 } __attribute__((packed)) eth_header_t;
 
-typedef struct ip_header {
+typedef struct {
   uint8_t ihl : 4;
   uint8_t version : 4;
   uint8_t tos;
@@ -27,7 +27,7 @@ typedef struct ip_header {
   uint32_t daddr;
 } __attribute__((packed)) ip_header_t;
 
-typedef struct udp_header {
+typedef struct {
   uint16_t source;
   uint16_t dest;
   uint16_t len;

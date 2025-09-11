@@ -16,16 +16,16 @@
 #include "network_utils.h"
 #include "packet_utils.h"
 
-dhcp_client_state_t *dhcp_client_init(const char *ifname) {
+dhcp_client_t *dhcp_client_init(const char *ifname) {
   srand(time(NULL));
 
-  dhcp_client_state_t *client = malloc(sizeof(dhcp_client_state_t));
+  dhcp_client_t *client = malloc(sizeof(dhcp_client_t));
   if (!client) {
     perror("malloc");
     return NULL;
   }
 
-  memset(client, 0, sizeof(dhcp_client_state_t));
+  memset(client, 0, sizeof(dhcp_client_t));
   strncpy(client->ifname, ifname, IFNAMSIZ - 1);
   client->ifname[IFNAMSIZ - 1] = '\0';
 
@@ -43,7 +43,7 @@ dhcp_client_state_t *dhcp_client_init(const char *ifname) {
   return client;
 }
 
-void dhcp_client_cleanup(dhcp_client_state_t *client) {
+void dhcp_client_cleanup(dhcp_client_t *client) {
   if (client) {
     if (client->sock > 0) {
       close(client->sock);
@@ -52,7 +52,7 @@ void dhcp_client_cleanup(dhcp_client_state_t *client) {
   }
 }
 
-int dhcp_send_discover(dhcp_client_state_t *client) {
+int dhcp_send_discover(dhcp_client_t *client) {
   dhcp_packet_t discover_packet;
   create_dhcp_packet(&discover_packet, client->mac, client->xid, DHCPDISCOVER);
 
@@ -66,41 +66,25 @@ int dhcp_send_discover(dhcp_client_state_t *client) {
   return 0;
 }
 
-int dhcp_receive_offer(dhcp_client_state_t *client) {
+int dhcp_receive_offer(dhcp_client_t *client) {
   dhcp_packet_t offer_packet;
 
   if (receive_dhcp_packet(client->sock, &offer_packet, client->xid) == 0) {
-    uint8_t *options = offer_packet.options;
-    while (*options != DHCP_OPTION_END) {
-      if (*options == 0) {
-        options++;
-        continue;
-      }
-
-      uint8_t code = *options++;
-      uint8_t len = *options++;
-
-      if (code == DHCP_OPTION_MSG_TYPE && len == 1 && *options == DHCPOFFER) {
-        printf("[+] Received DHCPOFFER!\n");
-        printf("    Offered IP: %s\n",
-               inet_ntoa(*(struct in_addr *)&offer_packet.yiaddr));
-        client->offered_ip = *(struct in_addr *)&offer_packet.yiaddr;
-        client->server_ip = *(struct in_addr *)&offer_packet.siaddr;
-
-        print_dhcp_packet(&offer_packet, "OFFER");
-        return 0;
-      }
-
-      options += len;
+    if (parse_options(&offer_packet, client) == DHCPOFFER) {
+      return 0;
     }
   }
   return -1;
 }
 
+int dhcp_send_request(dhcp_client_t *client) {}
+
+int dhcp_receive_ack(dhcp_client_t *client) {}
+
 void dhcp_client_run(const char *ifname) {
   printf("Starting DHCP client on interface: %s\n", ifname);
 
-  dhcp_client_state_t *client = dhcp_client_init(ifname);
+  dhcp_client_t *client = dhcp_client_init(ifname);
   if (!client) {
     return;
   }

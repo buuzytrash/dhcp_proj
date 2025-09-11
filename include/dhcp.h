@@ -27,15 +27,15 @@
 #define DHCPDISCOVER 1
 #define DHCPOFFER 2
 #define DHCPREQUEST 3
-#define DHCPDECLINE
+#define DHCPDECLINE 4
 #define DHCPACK 5
 #define DHCPNAK 6
 #define DHCPRELEASE 7
-#define DHCPINFORM
+#define DHCPINFORM 8
 
 #define DHCP_OPT_LEN 312
 
-typedef struct dhcp_packet {
+typedef struct {
   uint8_t op;                     // BOOTREQUEST (1) / BOOTREPLY (2)
   uint8_t htype;                  // 1 (Ethernet)
   uint8_t hlen;                   // 6 (MAC address)
@@ -54,19 +54,35 @@ typedef struct dhcp_packet {
   uint8_t options[DHCP_OPT_LEN];  // DHCP options
 } __attribute__((packed)) dhcp_packet_t;
 
-typedef struct dhcp_client_state {
+typedef enum {
+  DHCP_STATE_INIT,
+  DHCP_STATE_DISCOVER_SENT,
+  DHCP_STATE_OFFER_RECEIVED,
+  DHCP_STATE_REQUEST_SENT,
+  DHCP_STATE_BOUND,
+  DHCP_STATE_FAILED
+} dhcp_state_t;
+
+typedef struct {
   int sock;
   uint32_t xid;
+  uint32_t lease_time;
   struct in_addr offered_ip;
   struct in_addr server_ip;
+  struct in_addr subnet_mask;
+  struct in_addr router;
+  struct in_addr dns;
   uint8_t mac[6];
   char ifname[IFNAMSIZ];
-} dhcp_client_state_t;
+  dhcp_state_t state;
+} dhcp_client_t;
 
 void dhcp_client_run(const char *ifname);
-dhcp_client_state_t *dhcp_client_init(const char *ifname);
-int dhcp_send_discover(dhcp_client_state_t *client);
-int dhcp_receive_offer(dhcp_client_state_t *client);
-void dhcp_client_cleanup(dhcp_client_state_t *client);
+dhcp_client_t *dhcp_client_init(const char *ifname);
+int dhcp_send_discover(dhcp_client_t *client);
+int dhcp_receive_offer(dhcp_client_t *client);
+void dhcp_client_cleanup(dhcp_client_t *client);
+int dhcp_send_request(dhcp_client_t *client);
+int dhcp_receive_ack(dhcp_client_t *client);
 
 #endif

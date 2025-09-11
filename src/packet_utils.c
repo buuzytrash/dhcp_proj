@@ -119,6 +119,7 @@ int send_dhcp_packet(int sock, uint8_t *src_mac, dhcp_packet_t *dhcp_packet,
 
   return 0;
 }
+
 int receive_dhcp_packet(int sock, dhcp_packet_t *dhcp_packet,
                         uint32_t expected_xid) {
   uint8_t buffer[1500];
@@ -162,9 +163,7 @@ int receive_dhcp_packet(int sock, dhcp_packet_t *dhcp_packet,
     size_t headers_size =
         sizeof(eth_header_t) + sizeof(ip_header_t) + sizeof(udp_header_t);
 
-    if (n_bytes < (ssize_t)(headers_size +
-                            240))  // Минимальный размер DHCP пакета ~240 байт
-    {
+    if (n_bytes < (ssize_t)(headers_size + 240)) {
       printf(
           "[DEBUG] Packet too small for DHCP, headers: %zu, total received: "
           "%zd\n",
@@ -196,13 +195,119 @@ int receive_dhcp_packet(int sock, dhcp_packet_t *dhcp_packet,
   }
 }
 
+int parse_options(dhcp_packet_t *packet, dhcp_client_t *client) {
+  uint8_t *options = packet->options;
+  uint8_t msg_type = 0;
+
+  while (*options != DHCP_OPTION_END) {
+    if (*options == 0) {
+      options++;
+      continue;
+    }
+
+    uint8_t code = *options++;
+    uint8_t len = *options++;
+
+    if (code == DHCP_OPTION_MSG_TYPE && len == 1) {
+      msg_type = *options;
+      break;
+    }
+    options += len;
+  }
+
+  options = packet->options;
+
+  while (*options != DHCP_OPTION_END) {
+    if (*options == 0) {
+      options++;
+      continue;
+    }
+
+    uint8_t code = *options++;
+    uint8_t len = *options++;
+
+    switch (code) {
+      case DHCP_OPTION_MSG_TYPE:
+        switch (*options) {
+          case DHCPOFFER:
+            printf("[+] Received DHCPOFFER!\n");
+            printf("    Offered IP: %s\n",
+                   inet_ntoa(*(struct in_addr *)&packet->yiaddr));
+            client->offered_ip = *(struct in_addr *)&packet->yiaddr;
+            client->server_ip = *(struct in_addr *)&packet->siaddr;
+
+            print_dhcp_packet(packet, "OFFER");
+            break;
+
+          case DHCPACK:
+            printf("[+] Received DHCPACK!\n");
+            printf("    Assigned IP: %s\n",
+                   inet_ntoa(*(struct in_addr *)&packet->yiaddr));
+            client->offered_ip = *(struct in_addr *)&packet->yiaddr;
+            client->server_ip = *(struct in_addr *)&packet->siaddr;
+
+            print_dhcp_packet(packet, "ACK");
+            break;
+
+          case DHCPNAK:
+            printf("[!] Received DHCPNAK!\n");
+            print_dhcp_packet(packet, "NAK");
+            break;
+
+          default:
+            printf("[*] Received DHCP message type: %d\n", *options);
+        }
+        break;
+
+      case DHCP_OPTION_SUBNET_MASK:
+        if (len == 4) {
+          client->subnet_mask = *(struct in_addr *)options;
+          printf("    Subnet Mask: %s\n", inet_ntoa(client->subnet_mask));
+        }
+        break;
+
+      case DHCP_OPTION_ROUTER:
+        if (len >= 4) {
+          client->router = *(struct in_addr *)options;
+          printf("    Router: %s\n", inet_ntoa(client->router));
+        }
+        break;
+
+      case DHCP_OPTION_DNS_SERVER:
+        if (len >= 4) {
+          client->dns = *(struct in_addr *)options;
+          printf("    DNS: %s\n", inet_ntoa(client->dns));
+        }
+        break;
+
+      case DHCP_OPTION_LEASE_TIME:
+        if (len == 4) {
+          client->lease_time = ntohl(*(uint32_t *)options);
+          printf("    Lease Time: %u seconds\n", client->lease_time);
+        }
+        break;
+
+      case DHCP_OPTION_DHCP_SERVER:
+        if (len == 4) {
+          client->server_ip = *(struct in_addr *)options;
+          printf("    Server IP: %s\n", inet_ntoa(client->server_ip));
+        }
+        break;
+    }
+
+    options += len;
+  }
+
+  return msg_type;
+}
+
 void print_dhcp_packet(const dhcp_packet_t *packet, const char *type) {
   printf("\n=== DHCP %s PACKET DETAILS ===\n", type);
   printf("Operation:               %s\n",
          packet->op == 1 ? "REQUEST" : "REPLY");
   printf("Hardware Type:           %d\n", packet->htype);
   printf("Hardware Address Length: %d\n", packet->hlen);
-  printf("Transaction ID (xid):    0x%08X\n", htonl(packet->xid));
+  printf("Transaction ID (xid):    0x%08X\n", ntohl(packet->xid));
   printf("Flags:                   0x%04X\n", htons(packet->flags));
   printf("Client IP (ciaddr):      %s\n",
          inet_ntoa(*(struct in_addr *)&packet->ciaddr));
