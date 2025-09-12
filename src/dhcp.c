@@ -77,9 +77,49 @@ int dhcp_receive_offer(dhcp_client_t *client) {
   return -1;
 }
 
-int dhcp_send_request(dhcp_client_t *client) {}
+int dhcp_send_request(dhcp_client_t *client) {
+  dhcp_packet_t request_packet;
+  create_dhcp_packet(&request_packet, client->mac, client->xid, DHCPREQUEST);
 
-int dhcp_receive_ack(dhcp_client_t *client) {}
+  uint8_t *opt = request_packet.options;
+  while (*opt != DHCP_OPTION_END) {
+    opt++;
+  }
+
+  *opt++ = DHCP_OPTION_REQUESTED_IP;
+  *opt++ = 4;
+  memcpy(opt, &client->offered_ip.s_addr, 4);
+  opt += 4;
+
+  *opt++ = DHCP_OPTION_DHCP_SERVER;
+  *opt++ = 4;
+  memcpy(opt, &client->server_ip.s_addr, 4);
+  opt += 4;
+
+  *opt = DHCP_OPTION_END;
+
+  printf("[*] Sending DHCPREQUEST, xid: 0x%08X\n", client->xid);
+  printf("    Requesting IP: %s\n", inet_ntoa(client->offered_ip));
+  printf("    To server: %s\n", inet_ntoa(client->server_ip));
+
+  if (send_dhcp_packet(client->sock, client->mac, &request_packet, client->xid,
+                       DHCPREQUEST, client->ifname) < 0) {
+    fprintf(stderr, "[-] Failed to send DHCPREQUEST\n");
+    return -1;
+  }
+  return 0;
+}
+
+int dhcp_receive_ack(dhcp_client_t *client) {
+  dhcp_packet_t ack_packet;
+
+  if (receive_dhcp_packet(client->sock, &ack_packet, client->xid) == 0) {
+    if (parse_options(&ack_packet, client) == DHCPACK) {
+      return 0;
+    }
+  }
+  return -1;
+}
 
 void dhcp_client_run(const char *ifname) {
   printf("Starting DHCP client on interface: %s\n", ifname);
@@ -97,17 +137,27 @@ void dhcp_client_run(const char *ifname) {
 
     if (dhcp_receive_offer(client) == 0) {
       printf("[+] Successfully received DHCPOFFER\n");
-      break;
+      // break;
+      if (dhcp_send_request(client) < 0) {
+        break;
+      }
+
+      if (dhcp_receive_ack(client) == 0) {
+        printf("[+] DHCP process completed successfully!\n");
+        break;
+      } else {
+        printf("[-] Failed to receive ACK/NAK\n");
+      }
+
+      printf("[-] Timeout waiting for DHCPOFFER, attempt %d/3\n", attempt + 1);
+      attempt++;
+      sleep(2);
     }
 
-    printf("[-] Timeout waiting for DHCPOFFER, attempt %d/3\n", attempt + 1);
-    attempt++;
-    sleep(2);
-  }
+    if (attempt >= 3) {
+      printf("[-] No DHCPOFFER received after 3 attempts\n");
+    }
 
-  if (attempt >= 3) {
-    printf("[-] No DHCPOFFER received after 3 attempts\n");
+    dhcp_client_cleanup(client);
   }
-
-  dhcp_client_cleanup(client);
 }

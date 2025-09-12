@@ -293,6 +293,13 @@ int parse_options(dhcp_packet_t *packet, dhcp_client_t *client) {
           printf("    Server IP: %s\n", inet_ntoa(client->server_ip));
         }
         break;
+
+      case DHCP_OPTION_REQUESTED_IP:
+        if (len == 4) {
+          printf("    Requested IP: %s\n",
+                 inet_ntoa(*(struct in_addr *)options));
+        }
+        break;
     }
 
     options += len;
