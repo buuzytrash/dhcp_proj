@@ -114,8 +114,27 @@ int dhcp_receive_ack(dhcp_client_t *client) {
   dhcp_packet_t ack_packet;
 
   if (receive_dhcp_packet(client->sock, &ack_packet, client->xid) == 0) {
-    if (parse_options(&ack_packet, client) == DHCPACK) {
+    int msg_type = parse_options(&ack_packet, client);
+
+    if (msg_type == DHCPACK) {
+      printf("[+] Successfully received DHCPACK\n");
+      printf("[+] IP-address %s assigned\n", inet_ntoa(client->offered_ip));
+
+      char cmd[256];
+      snprintf(cmd, sizeof(cmd), "ip addr add %s/%d dev %s",
+               inet_ntoa(client->offered_ip), 24, client->ifname);
+      system(cmd);
+
+      if (client->router.s_addr != 0) {
+        snprintf(cmd, sizeof(cmd), "ip route add default via %s dev %s",
+                 inet_ntoa(client->router), client->ifname);
+        system(cmd);
+      }
+
       return 0;
+    } else if (msg_type == DHCPNAK) {
+      printf("[-] Received DHCPNAK - request denied\n");
+      return -1;
     }
   }
   return -1;
@@ -137,13 +156,15 @@ void dhcp_client_run(const char *ifname) {
 
     if (dhcp_receive_offer(client) == 0) {
       printf("[+] Successfully received DHCPOFFER\n");
-      // break;
       if (dhcp_send_request(client) < 0) {
         break;
       }
 
       if (dhcp_receive_ack(client) == 0) {
         printf("[+] DHCP process completed successfully!\n");
+        printf("[+] IP: %s, Mask: %s, Router: %s, DNS: %s\n",
+               inet_ntoa(client->offered_ip), inet_ntoa(client->subnet_mask),
+               inet_ntoa(client->router), inet_ntoa(client->dns));
         break;
       } else {
         printf("[-] Failed to receive ACK/NAK\n");
