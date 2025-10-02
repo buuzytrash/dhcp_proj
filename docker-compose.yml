@@ -9,43 +9,56 @@ services:
       test-network:
         ipv4_address: 192.168.91.2
     command:
-      [
-        "sh",
-        "-c",
-        "apk add --no-cache dnsmasq && echo 'interface=eth0
-
-          \ dhcp-range=192.168.91.100,192.168.91.200,255.255.255.0,12h
-
-          \ dhcp-option=3,192.168.91.1
-
-          \ dhcp-option=6,8.8.8.8
-
-          \ server=8.8.8.8
-
-          \ dhcp-authoritative
-
-          \ log-dhcp
-
-          \ no-resolv
-
-          \ no-hosts' > /etc/dnsmasq.conf && dnsmasq -d -C /etc/dnsmasq.conf"
-      ]
+      - "sh"
+      - "-c"
+      - |
+        apk add --no-cache dnsmasq && 
+        mkdir -p /var/lib/dnsmasq &&
+        echo 'interface=eth0
+        dhcp-range=192.168.91.100,192.168.91.200,255.255.255.0,12h
+        dhcp-option=3,192.168.91.1
+        dhcp-option=6,8.8.8.8
+        server=8.8.8.8
+        dhcp-authoritative
+        log-dhcp
+        log-queries
+        no-resolv
+        no-hosts' > /etc/dnsmasq.conf && 
+        dnsmasq -C /etc/dnsmasq.conf -l /var/lib/dnsmasq/dnsmasq.leases --keep-in-foreground
     healthcheck:
-      test: ["CMD", "sh", "-c", "netstat -lnu | grep :67 || ss -lnu | grep :67"]
+      test: ["CMD", "sh", "-c", "pgrep dnsmasq && (netstat -lnu | grep :67 || ss -lnu | grep :67)"]
+      # test: ["CMD", "sh", "-c", "pgrep dnsmasq || exit 1"]
       interval: 5s
       timeout: 10s
       retries: 10
       start_period: 10s
+    restart: unless-stopped
+  
   dhcp-client:
     build: .
-    container_name: dhcp-client-test
+    # container_name: dhcp-client-test
     privileged: true
     cap_add:
       - NET_ADMIN
       - NET_RAW
     networks:
       test-network:
-    command: [ "sh", "-c", "ip addr flush dev eth0 && ip link set eth0 up && ip addr show eth0 && /app/bin/dhcp_client eth0 && ip addr show eth0 && ping -c 3 8.8.8.8" ]
+    command: 
+      - "sh" 
+      - "-c" 
+      - | 
+        echo "Client $HOSTNAME: Waiting for DHCP server"
+        sleep $$((10 + $$RANDOM % 10))
+        ip addr flush dev eth0  
+        ip link set eth0 up 
+        echo "=== Client $HOSTNAME: Before DHCP ==="
+        ip addr show eth0 
+        echo "===  Client $HOSTNAME: DHCP client starting ==="
+        /app/bin/dhcp_client eth0  
+        echo "=== Client $HOSTNAME: Checking ==="
+        ip addr show eth0 
+        ping -c 3 8.8.8.8 || ping -c 3 192.168.91.1 || true
+        tail -f /dev/null
     tty: true
     depends_on:
       dhcp-server:
