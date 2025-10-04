@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <linux/if_packet.h>
 #include <net/if.h>
+#include <net/route.h>
 #include <netinet/ether.h>
 #include <stdio.h>
 #include <string.h>
@@ -84,6 +85,61 @@ void bring_interface_up(const char *ifname) {
   ioctl(fd, SIOCGIFFLAGS, &ifr);
   ifr.ifr_flags |= IFF_UP;
   ioctl(fd, SIOCSIFFLAGS, &ifr);
+  close(fd);
+}
+
+void set_ip_addr(const char *ifname, struct in_addr ip, struct in_addr mask) {
+  int fd = socket(AF_INET, SOCK_DGRAM, 0);
+  struct ifreq ifr = {0};
+  struct sockaddr_in *addr;
+
+  strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+
+  addr = (struct sockaddr_in *)&ifr.ifr_addr;
+  addr->sin_addr = ip;
+  addr->sin_family = AF_INET;
+
+  if (ioctl(fd, SIOCSIFADDR, &ifr) < 0) {
+    perror("ioctl SIOCSIFADDR");
+  }
+
+  addr->sin_addr = mask;
+  if (ioctl(fd, SIOCSIFNETMASK, &ifr) < 0) {
+    perror("ioctl SIOCSIFNETMASK");
+  }
+
+  close(fd);
+}
+
+void add_default_router(const char *ifname, struct in_addr gateway) {
+  int fd = socket(AF_INET, SOCK_DGRAM, 0);
+
+  struct rtentry route;
+  memset(&route, 0, sizeof(route));
+
+  struct sockaddr_in *addr;
+
+  addr = (struct sockaddr_in *)&route.rt_dst;
+  addr->sin_family = AF_INET;
+  addr->sin_addr.s_addr = INADDR_ANY;
+
+  addr = (struct sockaddr_in *)&route.rt_genmask;
+  addr->sin_family = AF_INET;
+  addr->sin_addr.s_addr = INADDR_ANY;
+
+  addr = (struct sockaddr_in *)&route.rt_gateway;
+  addr->sin_family = AF_INET;
+  addr->sin_addr = gateway;
+
+  route.rt_flags = RTF_UP | RTF_GATEWAY;
+  route.rt_dev = (char *)ifname;
+
+  if (ioctl(fd, SIOCADDRT, &route) < 0) {
+    perror("ioctl SIOCADDRT");
+    close(fd);
+    return;
+  }
+
   close(fd);
 }
 

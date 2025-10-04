@@ -78,6 +78,8 @@ typedef struct {
 } dhcp_client_t;
 
 void dhcp_client_run(const char *ifname);
+// void dhcp_client_run(const char *ifname, int timeout, int retries, int
+// verbose);
 dhcp_client_t *dhcp_client_init(const char *ifname);
 int dhcp_send_discover(dhcp_client_t *client);
 int dhcp_receive_offer(dhcp_client_t *client);

@@ -117,18 +117,10 @@ int dhcp_receive_ack(dhcp_client_t *client) {
     int msg_type = parse_options(&ack_packet, client);
 
     if (msg_type == DHCPACK) {
-      printf("[+] Successfully received DHCPACK\n");
-      printf("[+] IP-address %s assigned\n", inet_ntoa(client->offered_ip));
-
-      char cmd[256];
-      snprintf(cmd, sizeof(cmd), "ip addr add %s/%d dev %s",
-               inet_ntoa(client->offered_ip), 24, client->ifname);
-      system(cmd);
+      set_ip_addr(client->ifname, client->offered_ip, client->subnet_mask);
 
       if (client->router.s_addr != 0) {
-        snprintf(cmd, sizeof(cmd), "ip route add default via %s dev %s",
-                 inet_ntoa(client->router), client->ifname);
-        system(cmd);
+        add_default_router(client->ifname, client->router);
       }
 
       return 0;

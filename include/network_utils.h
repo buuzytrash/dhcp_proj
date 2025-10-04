@@ -39,4 +39,7 @@ int create_raw_socket(const char *ifname);
 void bring_interface_up(const char *ifname);
 uint16_t checksum(uint16_t *addr, int len);
 
+void set_ip_addr(const char *ifname, struct in_addr ip, struct in_addr mask);
+void add_default_router(const char *ifname, struct in_addr gateway);
+
 #endif
