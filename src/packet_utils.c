@@ -77,7 +77,7 @@ void create_header(uint8_t *buffer, uint8_t *src_mac, uint8_t *dst_mac,
 }
 
 int send_dhcp_packet(int sock, uint8_t *src_mac, dhcp_packet_t *dhcp_packet,
-                     uint32_t xid, uint8_t msg_type, const char *ifname) {
+                     const char *ifname) {
   uint8_t buffer[1500];
   uint8_t broadcast_mac[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 

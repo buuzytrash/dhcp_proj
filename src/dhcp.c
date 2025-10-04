@@ -58,8 +58,8 @@ int dhcp_send_discover(dhcp_client_t *client) {
 
   printf("[*] Sending DHCPDISCOVER, xid: 0x%08X\n", client->xid);
 
-  if (send_dhcp_packet(client->sock, client->mac, &discover_packet, client->xid,
-                       DHCPDISCOVER, client->ifname) < 0) {
+  if (send_dhcp_packet(client->sock, client->mac, &discover_packet,
+                       client->ifname) < 0) {
     fprintf(stderr, "[-] Failed to send DHCPDISCOVER\n");
     return -1;
   }
@@ -102,8 +102,8 @@ int dhcp_send_request(dhcp_client_t *client) {
   printf("    Requesting IP: %s\n", inet_ntoa(client->offered_ip));
   printf("    To server: %s\n", inet_ntoa(client->server_ip));
 
-  if (send_dhcp_packet(client->sock, client->mac, &request_packet, client->xid,
-                       DHCPREQUEST, client->ifname) < 0) {
+  if (send_dhcp_packet(client->sock, client->mac, &request_packet,
+                       client->ifname) < 0) {
     fprintf(stderr, "[-] Failed to send DHCPREQUEST\n");
     return -1;
   }
