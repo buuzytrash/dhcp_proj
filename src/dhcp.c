@@ -69,7 +69,8 @@ int dhcp_send_discover(dhcp_client_t *client) {
 int dhcp_receive_offer(dhcp_client_t *client) {
   dhcp_packet_t offer_packet;
 
-  if (receive_dhcp_packet(client->sock, &offer_packet, client->xid) == 0) {
+  if (receive_dhcp_packet(client->sock, &offer_packet, client->xid,
+                          client->timeout_secs) == 0) {
     if (parse_options(&offer_packet, client) == DHCPOFFER) {
       return 0;
     }
@@ -113,7 +114,8 @@ int dhcp_send_request(dhcp_client_t *client) {
 int dhcp_receive_ack(dhcp_client_t *client) {
   dhcp_packet_t ack_packet;
 
-  if (receive_dhcp_packet(client->sock, &ack_packet, client->xid) == 0) {
+  if (receive_dhcp_packet(client->sock, &ack_packet, client->xid,
+                          client->timeout_secs) == 0) {
     int msg_type = parse_options(&ack_packet, client);
 
     if (msg_type == DHCPACK) {
@@ -132,24 +134,27 @@ int dhcp_receive_ack(dhcp_client_t *client) {
   return -1;
 }
 
-void dhcp_client_run(const char *ifname) {
+void dhcp_client_run(const char *ifname, int timeout_secs, int retries) {
   printf("Starting DHCP client on interface: %s\n", ifname);
 
   dhcp_client_t *client = dhcp_client_init(ifname);
   if (!client) {
     return;
   }
+  client->timeout_secs = timeout_secs;
+  client->retries = retries;
 
-  int attempt = 0;
-  while (attempt < 3) {
+  for (int attempt = 1; attempt < client->retries; attempt++) {
+    printf("[*] Attempt %d\\%d\n", attempt, client->retries);
+
     if (dhcp_send_discover(client) < 0) {
-      break;
+      continue;
     }
 
     if (dhcp_receive_offer(client) == 0) {
       printf("[+] Successfully received DHCPOFFER\n");
       if (dhcp_send_request(client) < 0) {
-        break;
+        continue;
       }
 
       if (dhcp_receive_ack(client) == 0) {
@@ -158,20 +163,15 @@ void dhcp_client_run(const char *ifname) {
         printf("Mask: %s\n", inet_ntoa(client->subnet_mask));
         printf("Router: %s\n", inet_ntoa(client->router));
         printf("DNS: %s\n", inet_ntoa(client->dns));
-        break;
+
+        dhcp_client_cleanup(client);
+        return;
       } else {
         printf("[-] Failed to receive ACK/NAK\n");
       }
-
-      printf("[-] Timeout waiting for DHCPOFFER, attempt %d/3\n", attempt + 1);
-      attempt++;
-      sleep(2);
     }
-
-    if (attempt >= 3) {
-      printf("[-] No DHCPOFFER received after 3 attempts\n");
-    }
-
-    dhcp_client_cleanup(client);
   }
+  fprintf(stderr, "[-] DHCP process failed after %d attempts.\n",
+          client->retries);
+  dhcp_client_cleanup(client);
 }

@@ -1,6 +1,7 @@
 #include "packet_utils.h"
 
 #include <arpa/inet.h>
+#include <errno.h>
 #include <linux/if_ether.h>
 #include <linux/if_packet.h>
 #include <net/if.h>
@@ -8,8 +9,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/select.h>
 #include <time.h>
 
+#include "dhcp.h"
 #include "logging.h"
 #include "network_utils.h"
 
@@ -122,81 +125,112 @@ int send_dhcp_packet(int sock, uint8_t *src_mac, dhcp_packet_t *dhcp_packet,
 }
 
 int receive_dhcp_packet(int sock, dhcp_packet_t *dhcp_packet,
-                        uint32_t expected_xid) {
+                        uint32_t expected_xid, int timeout_secs) {
   uint8_t buffer[1500];
 
   while (1) {
-    ssize_t n_bytes = recv(sock, buffer, sizeof(buffer), 0);
-    if (n_bytes < 0) {
-      perror("[-] recv in receive_dhcp_packet");
+    fd_set readfds;
+    struct timeval tv;
+    int retval;
+
+    FD_ZERO(&readfds);
+    FD_SET(sock, &readfds);
+
+    tv.tv_sec = timeout_secs;
+    tv.tv_usec = 0;
+
+    retval = select(sock + 1, &readfds, NULL, NULL, &tv);
+
+    if (retval == -1) {
+      if (errno == EINTR) {
+        continue;
+      }
+
+      perror("[-] select() error");
       return -1;
     }
 
-    DEBUG_PRINT("Received %zd bytes\n", n_bytes);
-
-    if (n_bytes < (ssize_t)(sizeof(eth_header_t) + sizeof(ip_header_t) +
-                            sizeof(udp_header_t))) {
-      DEBUG_PRINT("Packet too small, skipping\n");
-
-      continue;
-    }
-
-    eth_header_t *eth = (eth_header_t *)buffer;
-    if (htons(eth->eth_type) != ETH_P_IP) {
-      DEBUG_PRINT("Not IP packet, skipping\n");
-      continue;
-    }
-
-    ip_header_t *ip = (ip_header_t *)(buffer + sizeof(eth_header_t));
-    if (ip->protocol != IPPROTO_UDP) {
-      DEBUG_PRINT("Not UDP packet, skipping\n");
-
-      continue;
-    }
-
-    udp_header_t *udp =
-        (udp_header_t *)(buffer + sizeof(eth_header_t) + sizeof(ip_header_t));
-    DEBUG_PRINT("UDP dest port: %d (expected: %d)\n", ntohs(udp->dest),
-                DHCP_PORT_CLIENT);
-    if (ntohs(udp->dest) != DHCP_PORT_CLIENT) {
-      DEBUG_PRINT("Not DHCP client port, skipping\n");
-
-      continue;
-    }
-
-    size_t headers_size =
-        sizeof(eth_header_t) + sizeof(ip_header_t) + sizeof(udp_header_t);
-
-    if (n_bytes < (ssize_t)(headers_size + 240)) {
+    if (retval == 0) {
       DEBUG_PRINT(
-          "Packet too small for DHCP, headers: %zu, total received: "
-          "%zd\n",
-          headers_size, n_bytes);
-      continue;
+          "Timeout reached. No DHCP packet received after %d seconds.\n",
+          timeout_secs);
+      return -1;
     }
 
-    dhcp_packet_t *recv_packet =
-        (dhcp_packet_t *)(buffer + sizeof(eth_header_t) + sizeof(ip_header_t) +
-                          sizeof(udp_header_t));
+    if (FD_ISSET(sock, &readfds)) {
+      ssize_t n_bytes = recv(sock, buffer, sizeof(buffer), 0);
+      if (n_bytes < 0) {
+        perror("[-] recv in receive_dhcp_packet");
+        return -1;
+      }
 
-    if (recv_packet->magic_cookie != htonl(DHCP_MAGIC_COOKIE)) {
-      continue;
+      DEBUG_PRINT("Received %zd bytes\n", n_bytes);
+
+      if (n_bytes < (ssize_t)(sizeof(eth_header_t) + sizeof(ip_header_t) +
+                              sizeof(udp_header_t))) {
+        DEBUG_PRINT("Packet too small, skipping\n");
+
+        continue;
+      }
+
+      eth_header_t *eth = (eth_header_t *)buffer;
+      if (htons(eth->eth_type) != ETH_P_IP) {
+        DEBUG_PRINT("Not IP packet, skipping\n");
+        continue;
+      }
+
+      ip_header_t *ip = (ip_header_t *)(buffer + sizeof(eth_header_t));
+      if (ip->protocol != IPPROTO_UDP) {
+        DEBUG_PRINT("Not UDP packet, skipping\n");
+
+        continue;
+      }
+
+      udp_header_t *udp =
+          (udp_header_t *)(buffer + sizeof(eth_header_t) + sizeof(ip_header_t));
+      DEBUG_PRINT("UDP dest port: %d (expected: %d)\n", ntohs(udp->dest),
+                  DHCP_PORT_CLIENT);
+      if (ntohs(udp->dest) != DHCP_PORT_CLIENT) {
+        DEBUG_PRINT("Not DHCP client port, skipping\n");
+
+        continue;
+      }
+
+      size_t headers_size =
+          sizeof(eth_header_t) + sizeof(ip_header_t) + sizeof(udp_header_t);
+
+      if (n_bytes < (ssize_t)(headers_size + 240)) {
+        DEBUG_PRINT(
+            "Packet too small for DHCP, headers: %zu, total received: "
+            "%zd\n",
+            headers_size, n_bytes);
+        continue;
+      }
+
+      dhcp_packet_t *recv_packet =
+          (dhcp_packet_t *)(buffer + sizeof(eth_header_t) +
+                            sizeof(ip_header_t) + sizeof(udp_header_t));
+
+      if (recv_packet->magic_cookie != htonl(DHCP_MAGIC_COOKIE)) {
+        continue;
+      }
+
+      if (recv_packet->xid != htonl(expected_xid)) {
+        continue;
+      }
+
+      DEBUG_PRINT("Ethernet type: 0x%04X\n", htons(eth->eth_type));
+      DEBUG_PRINT("IP protocol: %d\n", ip->protocol);
+      DEBUG_PRINT("UDP dest port: %d\n", ntohs(udp->dest));
+      DEBUG_PRINT("DHCP magic cookie: 0x%08X\n", recv_packet->magic_cookie);
+      DEBUG_PRINT("Expected XID: 0x%08X, Received XID: 0x%08X\n",
+                  htonl(expected_xid), recv_packet->xid);
+
+      memcpy(dhcp_packet, recv_packet, sizeof(dhcp_packet_t));
+      return 0;
     }
-
-    if (recv_packet->xid != htonl(expected_xid)) {
-      continue;
-    }
-
-    DEBUG_PRINT("Ethernet type: 0x%04X\n", htons(eth->eth_type));
-    DEBUG_PRINT("IP protocol: %d\n", ip->protocol);
-    DEBUG_PRINT("UDP dest port: %d\n", ntohs(udp->dest));
-    DEBUG_PRINT("DHCP magic cookie: 0x%08X\n", recv_packet->magic_cookie);
-    DEBUG_PRINT("Expected XID: 0x%08X, Received XID: 0x%08X\n",
-                htonl(expected_xid), recv_packet->xid);
-
-    memcpy(dhcp_packet, recv_packet, sizeof(dhcp_packet_t));
-    return 0;
   }
+  return -1;
 }
 
 int parse_options(dhcp_packet_t *packet, dhcp_client_t *client) {

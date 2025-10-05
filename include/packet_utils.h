@@ -13,7 +13,7 @@ void create_header(uint8_t *buffer, uint8_t *src_mac, uint8_t *dst_mac,
 int send_dhcp_packet(int sock, uint8_t *src_mac, dhcp_packet_t *dhcp_packet,
                      const char *ifname);
 int receive_dhcp_packet(int sock, dhcp_packet_t *dhcp_packet,
-                        uint32_t expected_xid);
+                        uint32_t expected_xid, int timeout_secs);
 int parse_options(dhcp_packet_t *packet, dhcp_client_t *client);
 
 void print_dhcp_packet(const dhcp_packet_t *packet, const char *type);

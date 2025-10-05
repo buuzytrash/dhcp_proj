@@ -109,7 +109,7 @@ int main(int argc, char *argv[]) {
     printf("\n");
   }
 
-  dhcp_client_run(config.interface);
+  dhcp_client_run(config.interface, config.timeout, config.retries);
 
   return 0;
 }
