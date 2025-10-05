@@ -54,7 +54,7 @@ services:
         echo "=== Client $$HOSTNAME: Before DHCP ==="
         ip addr show eth0 
         echo "===  Client $$HOSTNAME: DHCP client starting ==="
-        /app/bin/dhcp_client eth0  
+        /app/bin/dhcp_client -i eth0 -v  
         echo "=== Client $$HOSTNAME: Checking ==="
         ip addr show eth0 
         ping -c 3 8.8.8.8 || ping -c 3 192.168.91.1 || true

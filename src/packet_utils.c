@@ -10,6 +10,7 @@
 #include <sys/ioctl.h>
 #include <time.h>
 
+#include "logging.h"
 #include "network_utils.h"
 
 void create_dhcp_packet(dhcp_packet_t *packet, uint8_t *mac, uint32_t xid,
@@ -91,7 +92,7 @@ int send_dhcp_packet(int sock, uint8_t *src_mac, dhcp_packet_t *dhcp_packet,
   struct ifreq ifr;
   strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
   if (ioctl(sock, SIOCGIFINDEX, &ifr) < 0) {
-    perror("ioctl SIOCGIFINDEX in send_dhcp_packet");
+    perror("[-] ioctl() SIOCGIFINDEX in send_dhcp_packet");
     return -1;
   }
 
@@ -103,7 +104,7 @@ int send_dhcp_packet(int sock, uint8_t *src_mac, dhcp_packet_t *dhcp_packet,
   dest_addr.sll_halen = ETH_ALEN;
   memcpy(dest_addr.sll_addr, broadcast_mac, ETH_ALEN);
 
-  printf("Debug: Interface index: %d\n", dest_addr.sll_ifindex);
+  DEBUG_PRINT("[DEBUG] Interface index: %d\n", dest_addr.sll_ifindex);
 
   ssize_t sent = sendto(sock, buffer,
                         sizeof(eth_header_t) + sizeof(ip_header_t) +
@@ -111,11 +112,11 @@ int send_dhcp_packet(int sock, uint8_t *src_mac, dhcp_packet_t *dhcp_packet,
                         0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
 
   if (sent < 0) {
-    perror("sendto");
+    perror("[-] sendto() in create_header");
     return -1;
   }
 
-  printf("[+] Sent %zd bytes successfully\n", sent);
+  DEBUG_PRINT("Sent %zd bytes successfully\n", sent);
 
   return 0;
 }
@@ -127,36 +128,39 @@ int receive_dhcp_packet(int sock, dhcp_packet_t *dhcp_packet,
   while (1) {
     ssize_t n_bytes = recv(sock, buffer, sizeof(buffer), 0);
     if (n_bytes < 0) {
-      perror("recv");
+      perror("[-] recv in receive_dhcp_packet");
       return -1;
     }
 
-    printf("[DEBUG] Received %zd bytes\n", n_bytes);
+    DEBUG_PRINT("Received %zd bytes\n", n_bytes);
 
     if (n_bytes < (ssize_t)(sizeof(eth_header_t) + sizeof(ip_header_t) +
                             sizeof(udp_header_t))) {
-      printf("[DEBUG] Packet too small, skipping\n");
+      DEBUG_PRINT("Packet too small, skipping\n");
+
       continue;
     }
 
     eth_header_t *eth = (eth_header_t *)buffer;
     if (htons(eth->eth_type) != ETH_P_IP) {
-      printf("[DEBUG] Not IP packet, skipping\n");
+      DEBUG_PRINT("Not IP packet, skipping\n");
       continue;
     }
 
     ip_header_t *ip = (ip_header_t *)(buffer + sizeof(eth_header_t));
     if (ip->protocol != IPPROTO_UDP) {
-      printf("[DEBUG] Not UDP packet, skipping\n");
+      DEBUG_PRINT("Not UDP packet, skipping\n");
+
       continue;
     }
 
     udp_header_t *udp =
         (udp_header_t *)(buffer + sizeof(eth_header_t) + sizeof(ip_header_t));
-    printf("[DEBUG] UDP dest port: %d (expected: %d)\n", ntohs(udp->dest),
-           DHCP_PORT_CLIENT);
+    DEBUG_PRINT("UDP dest port: %d (expected: %d)\n", ntohs(udp->dest),
+                DHCP_PORT_CLIENT);
     if (ntohs(udp->dest) != DHCP_PORT_CLIENT) {
-      printf("[DEBUG] Not DHCP client port, skipping\n");
+      DEBUG_PRINT("Not DHCP client port, skipping\n");
+
       continue;
     }
 
@@ -164,8 +168,8 @@ int receive_dhcp_packet(int sock, dhcp_packet_t *dhcp_packet,
         sizeof(eth_header_t) + sizeof(ip_header_t) + sizeof(udp_header_t);
 
     if (n_bytes < (ssize_t)(headers_size + 240)) {
-      printf(
-          "[DEBUG] Packet too small for DHCP, headers: %zu, total received: "
+      DEBUG_PRINT(
+          "Packet too small for DHCP, headers: %zu, total received: "
           "%zd\n",
           headers_size, n_bytes);
       continue;
@@ -183,12 +187,12 @@ int receive_dhcp_packet(int sock, dhcp_packet_t *dhcp_packet,
       continue;
     }
 
-    printf("[DEBUG] Ethernet type: 0x%04X\n", htons(eth->eth_type));
-    printf("[DEBUG] IP protocol: %d\n", ip->protocol);
-    printf("[DEBUG] UDP dest port: %d\n", ntohs(udp->dest));
-    printf("[DEBUG] DHCP magic cookie: 0x%08X\n", recv_packet->magic_cookie);
-    printf("[DEBUG] Expected XID: 0x%08X, Received XID: 0x%08X\n",
-           htonl(expected_xid), recv_packet->xid);
+    DEBUG_PRINT("Ethernet type: 0x%04X\n", htons(eth->eth_type));
+    DEBUG_PRINT("IP protocol: %d\n", ip->protocol);
+    DEBUG_PRINT("UDP dest port: %d\n", ntohs(udp->dest));
+    DEBUG_PRINT("DHCP magic cookie: 0x%08X\n", recv_packet->magic_cookie);
+    DEBUG_PRINT("Expected XID: 0x%08X, Received XID: 0x%08X\n",
+                htonl(expected_xid), recv_packet->xid);
 
     memcpy(dhcp_packet, recv_packet, sizeof(dhcp_packet_t));
     return 0;
@@ -236,7 +240,9 @@ int parse_options(dhcp_packet_t *packet, dhcp_client_t *client) {
             client->offered_ip = *(struct in_addr *)&packet->yiaddr;
             client->server_ip = *(struct in_addr *)&packet->siaddr;
 
-            print_dhcp_packet(packet, "OFFER");
+            if (verbose_flag) {
+              print_dhcp_packet(packet, "OFFER");
+            }
             break;
 
           case DHCPACK:
@@ -246,12 +252,16 @@ int parse_options(dhcp_packet_t *packet, dhcp_client_t *client) {
             client->offered_ip = *(struct in_addr *)&packet->yiaddr;
             client->server_ip = *(struct in_addr *)&packet->siaddr;
 
-            print_dhcp_packet(packet, "ACK");
+            if (verbose_flag) {
+              print_dhcp_packet(packet, "ACK");
+            }
             break;
 
           case DHCPNAK:
             printf("[!] Received DHCPNAK!\n");
-            print_dhcp_packet(packet, "NAK");
+            if (verbose_flag) {
+              print_dhcp_packet(packet, "NAK");
+            }
             break;
 
           default:
@@ -262,42 +272,42 @@ int parse_options(dhcp_packet_t *packet, dhcp_client_t *client) {
       case DHCP_OPTION_SUBNET_MASK:
         if (len == 4) {
           client->subnet_mask = *(struct in_addr *)options;
-          printf("    Subnet Mask: %s\n", inet_ntoa(client->subnet_mask));
+          DEBUG_PRINT("    Subnet Mask: %s\n", inet_ntoa(client->subnet_mask));
         }
         break;
 
       case DHCP_OPTION_ROUTER:
         if (len >= 4) {
           client->router = *(struct in_addr *)options;
-          printf("    Router: %s\n", inet_ntoa(client->router));
+          DEBUG_PRINT("    Router: %s\n", inet_ntoa(client->router));
         }
         break;
 
       case DHCP_OPTION_DNS_SERVER:
         if (len >= 4) {
           client->dns = *(struct in_addr *)options;
-          printf("    DNS: %s\n", inet_ntoa(client->dns));
+          DEBUG_PRINT("    DNS: %s\n", inet_ntoa(client->dns));
         }
         break;
 
       case DHCP_OPTION_LEASE_TIME:
         if (len == 4) {
           client->lease_time = ntohl(*(uint32_t *)options);
-          printf("    Lease Time: %u seconds\n", client->lease_time);
+          DEBUG_PRINT("    Lease Time: %u seconds\n", client->lease_time);
         }
         break;
 
       case DHCP_OPTION_DHCP_SERVER:
         if (len == 4) {
           client->server_ip = *(struct in_addr *)options;
-          printf("    Server IP: %s\n", inet_ntoa(client->server_ip));
+          DEBUG_PRINT("    Server IP: %s\n", inet_ntoa(client->server_ip));
         }
         break;
 
       case DHCP_OPTION_REQUESTED_IP:
         if (len == 4) {
-          printf("    Requested IP: %s\n",
-                 inet_ntoa(*(struct in_addr *)options));
+          DEBUG_PRINT("    Requested IP: %s\n",
+                      inet_ntoa(*(struct in_addr *)options));
         }
         break;
     }

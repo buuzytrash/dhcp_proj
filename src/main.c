@@ -4,13 +4,14 @@
 #include <unistd.h>
 
 #include "dhcp.h"
+#include "logging.h"
+
+int verbose_flag = 0;
 
 typedef struct {
   char *interface;
-  int verbose;
   int timeout;
   int retries;
-  char *log_file;
 } client_config_t;
 
 void print_usage(const char *program_name) {
@@ -26,10 +27,8 @@ void print_usage(const char *program_name) {
 
 int parse_args(int argc, char **argv, client_config_t *config) {
   config->interface = NULL;
-  config->verbose = 0;
   config->timeout = 5;
   config->retries = 3;
-  config->log_file = NULL;
 
   struct option long_options[] = {{"help", no_argument, 0, 'h'},
                                   {"interface", required_argument, 0, 'i'},
@@ -47,7 +46,7 @@ int parse_args(int argc, char **argv, client_config_t *config) {
         config->interface = optarg;
         break;
       case 'v':
-        config->verbose = 1;
+        verbose_flag = 1;
         break;
       case 't':
         config->timeout = atoi(optarg);
@@ -101,10 +100,10 @@ int main(int argc, char *argv[]) {
     exit(EXIT_FAILURE);
   }
 
-  if (config.verbose) {
+  if (verbose_flag) {
     printf("DHCP Client Configuration:\n");
     printf("  Interface: %s\n", config.interface);
-    printf("  Verbose: %s\n", config.verbose ? "enabled" : "disabled");
+    printf("  Verbose: %s\n", verbose_flag ? "enabled" : "disabled");
     printf("  Timeout: %d seconds\n", config.timeout);
     printf("  Retries: %d\n", config.retries);
     printf("\n");

@@ -125,7 +125,7 @@ int dhcp_receive_ack(dhcp_client_t *client) {
 
       return 0;
     } else if (msg_type == DHCPNAK) {
-      printf("[-] Received DHCPNAK - request denied\n");
+      printf("[-] Request denied\n");
       return -1;
     }
   }
@@ -154,9 +154,10 @@ void dhcp_client_run(const char *ifname) {
 
       if (dhcp_receive_ack(client) == 0) {
         printf("[+] DHCP process completed successfully!\n");
-        printf("[+] IP: %s, Mask: %s, Router: %s, DNS: %s\n",
-               inet_ntoa(client->offered_ip), inet_ntoa(client->subnet_mask),
-               inet_ntoa(client->router), inet_ntoa(client->dns));
+        printf("IP: %s\n", inet_ntoa(client->offered_ip));
+        printf("Mask: %s\n", inet_ntoa(client->subnet_mask));
+        printf("Router: %s\n", inet_ntoa(client->router));
+        printf("DNS: %s\n", inet_ntoa(client->dns));
         break;
       } else {
         printf("[-] Failed to receive ACK/NAK\n");

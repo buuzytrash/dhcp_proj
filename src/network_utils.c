@@ -15,7 +15,7 @@ void get_mac_addr(const char *ifname, uint8_t *mac) {
   int fd = 0;
 
   if ((fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0) {
-    perror("socket() in get_mac_addr()");
+    perror("[-] socket() in get_mac_addr()");
     return;
   }
 
@@ -23,7 +23,7 @@ void get_mac_addr(const char *ifname, uint8_t *mac) {
   strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
 
   if (ioctl(fd, SIOCGIFHWADDR, &ifr) < 0) {
-    perror("ioctl");
+    perror("[-] ioctl()");
     close(fd);
     return;
   }
@@ -46,7 +46,7 @@ int create_raw_socket(const char *ifname) {
   strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
 
   if (ioctl(sock, SIOCGIFINDEX, &ifr) < 0) {
-    perror("ioctl SIOCGIFINDEX");
+    perror("[-] ioctl() SIOCGIFINDEX");
     close(sock);
     return -1;
   }
@@ -58,7 +58,7 @@ int create_raw_socket(const char *ifname) {
   sll.sll_protocol = htons(ETH_P_ALL);
 
   if (bind(sock, (struct sockaddr *)&sll, sizeof(sll)) < 0) {
-    perror("bind");
+    perror("[-] bind()");
     close(sock);
     return -1;
   }
@@ -70,7 +70,7 @@ int create_raw_socket(const char *ifname) {
 
   if (setsockopt(sock, SOL_PACKET, PACKET_ADD_MEMBERSHIP, &mr, sizeof(mr)) <
       0) {
-    perror("setsockopt promiscuous");
+    perror("[-] setsockopt() promiscuous");
     close(sock);
     return -1;
   }
@@ -80,6 +80,12 @@ int create_raw_socket(const char *ifname) {
 
 void bring_interface_up(const char *ifname) {
   int fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (fd < 0) {
+    perror("[-] socket() in func bring_interface_up");
+    close(fd);
+    return;
+  }
+
   struct ifreq ifr = {0};
   strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
   ioctl(fd, SIOCGIFFLAGS, &ifr);
@@ -90,6 +96,12 @@ void bring_interface_up(const char *ifname) {
 
 void set_ip_addr(const char *ifname, struct in_addr ip, struct in_addr mask) {
   int fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (fd < 0) {
+    perror("[-] socket() in set_ip_addr");
+    close(fd);
+    return;
+  }
+
   struct ifreq ifr = {0};
   struct sockaddr_in *addr;
 
@@ -100,12 +112,12 @@ void set_ip_addr(const char *ifname, struct in_addr ip, struct in_addr mask) {
   addr->sin_family = AF_INET;
 
   if (ioctl(fd, SIOCSIFADDR, &ifr) < 0) {
-    perror("ioctl SIOCSIFADDR");
+    perror("[-] ioctl() SIOCSIFADDR");
   }
 
   addr->sin_addr = mask;
   if (ioctl(fd, SIOCSIFNETMASK, &ifr) < 0) {
-    perror("ioctl SIOCSIFNETMASK");
+    perror("[-] ioctl() SIOCSIFNETMASK");
   }
 
   close(fd);
@@ -113,6 +125,11 @@ void set_ip_addr(const char *ifname, struct in_addr ip, struct in_addr mask) {
 
 void add_default_router(const char *ifname, struct in_addr gateway) {
   int fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (fd < 0) {
+    perror("[-] socket() in func add_default_router");
+    close(fd);
+    return;
+  }
 
   struct rtentry route;
   memset(&route, 0, sizeof(route));
@@ -135,7 +152,7 @@ void add_default_router(const char *ifname, struct in_addr gateway) {
   route.rt_dev = (char *)ifname;
 
   if (ioctl(fd, SIOCADDRT, &route) < 0) {
-    perror("ioctl SIOCADDRT");
+    perror("ioctl() SIOCADDRT");
     close(fd);
     return;
   }
